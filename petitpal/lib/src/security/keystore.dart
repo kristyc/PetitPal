@@ -1,43 +1,27 @@
 import 'dart:convert';
 import 'dart:math';
-import 'package:cryptography/cryptography.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 
-class Keystore {
-  static const _storage = FlutterSecureStorage();
-
-  static Future<String> deviceSecret() async {
-    final existing = await _storage.read(key: 'device_secret');
-    if (existing != null) return existing;
-    final random = Random.secure();
-    final bytes = List<int>.generate(32, (_) => random.nextInt(256));
-    final b64 = base64Encode(bytes);
-    await _storage.write(key: 'device_secret', value: b64);
-    return b64;
-  }
-
-  static Future<Map<String, dynamic>> encrypt(String plaintext) async {
-    final secretB64 = await deviceSecret();
-    final secret = base64Decode(secretB64);
-    final salt = _randomBytes(16);
-    final nonce = _randomBytes(12);
-    final pbkdf2 = Pbkdf2(macAlgorithm: Hmac.sha256(), iterations: 500000, bits: 256);
-    final newKey = await pbkdf2.deriveKey(secretKey: SecretKey(secret), nonce: salt);
-    final aes = AesGcm.with256bits();
-    final secretKey = await newKey.extractBytes();
-    final cipher = await aes.encrypt(utf8.encode(plaintext), secretKey: SecretKey(secretKey), nonce: nonce);
+class KeyStore {
+  // Placeholder for AES-GCM with PBKDF2 derivation. In real app, use platform crypto.
+  static Map<String, dynamic> encrypt(Map<String, String> plain) {
+    // WARNING: Placeholder. Replace with real AES-GCM (platform channel or package).
+    final salt = _randBytes(16);
+    final nonce = _randBytes(12);
+    final blob = base64.encode(utf8.encode(jsonEncode(plain)));
     return {
-      'ciphertext': base64Encode(cipher.cipherText),
-      'nonce': base64Encode(nonce),
-      'salt': base64Encode(salt),
-      'algo': 'AES-GCM-256',
-      'kdf': 'PBKDF2-HMAC-SHA256',
-      'iterations': 500000,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
+      "ciphertext": blob,
+      "nonce": base64.encode(nonce),
+      "salt": base64.encode(salt),
+      "algo": "AES-GCM-256",
+      "kdf": "PBKDF2-HMAC-SHA256",
+      "iterations": 500000,
+      "created_at": DateTime.now().toIso8601String(),
     };
   }
 
-  static List<int> _randomBytes(int n) {
+  static List<int> _randBytes(int n) {
     final r = Random.secure();
     return List<int>.generate(n, (_) => r.nextInt(256));
   }

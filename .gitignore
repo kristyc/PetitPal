@@ -35,8 +35,10 @@ cloudflare-worker/.dev.vars
 cloudflare-worker/.env
 cloudflare-worker/.env.local
 cloudflare-worker/.env.production
+cloudflare-worker/.env.*
 cloudflare-worker/node_modules/
 cloudflare-worker/dist/
+cloudflare-worker/wrangler.toml # may contain account IDs or bindings in prod
 
 # ========================
 # Sensitive Config
@@ -45,6 +47,9 @@ cloudflare-worker/dist/
 *.env.*
 **/lib/config/internal_config.dart
 **/lib/config/secrets.dart
+**/keystore.*
+**/keys_backup.json
+sentry.properties
 
 # ========================
 # Logs & OS Files
@@ -57,3 +62,9 @@ Thumbs.db
 # Generated Docs/Builds
 # ========================
 docs/generated/
+
+# ========================
+# Generated PDFs (keep if only safe diagrams/text)
+# ========================
+docs/*.pdf
+!docs/TECHNICAL_IMPLEMENTATION.pdf  # safe to commit (template-based, no secrets)
