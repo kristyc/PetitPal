@@ -1,0 +1,59 @@
+# ========================
+# Flutter & Dart
+# ========================
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/pubspec.lock
+**/.idea/
+**/.vscode/
+
+# ========================
+# Android
+# ========================
+**/android/.gradle/
+**/android/captures/
+**/android/local.properties
+**/android/key.properties
+**/android/app/google-services.json
+
+# ========================
+# iOS
+# ========================
+**/ios/Pods/
+**/ios/Runner/GoogleService-Info.plist
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+
+# ========================
+# Cloudflare Worker
+# ========================
+cloudflare-worker/.wrangler/
+cloudflare-worker/.dev.vars
+cloudflare-worker/.env
+cloudflare-worker/.env.local
+cloudflare-worker/.env.production
+cloudflare-worker/node_modules/
+cloudflare-worker/dist/
+
+# ========================
+# Sensitive Config
+# ========================
+*.env
+*.env.*
+**/lib/config/internal_config.dart
+**/lib/config/secrets.dart
+
+# ========================
+# Logs & OS Files
+# ========================
+*.log
+.DS_Store
+Thumbs.db
+
+# ========================
+# Generated Docs/Builds
+# ========================
+docs/generated/
