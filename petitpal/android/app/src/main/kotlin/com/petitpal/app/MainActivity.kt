@@ -1,4 +1,4 @@
-package com.example.petitpal
+package com.petitpal.app
 
 import io.flutter.embedding.android.FlutterActivity
 
