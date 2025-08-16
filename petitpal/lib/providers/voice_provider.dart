@@ -1,36 +1,37 @@
-// lib/providers/voice_provider.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import '../config/launch_config.dart';
-import '../core/services/analytics_service.dart';
+import 'package:permission_handler/permission_handler.dart';
+import '../core/services/analytics_service.dart' as analytics;
 
-// Voice State
+// Voice state model
 class VoiceState {
   final bool isListening;
   final bool isProcessing;
   final bool isSpeaking;
   final String recognizedText;
-  final String? errorMessage;
+  final String? error;
+  final bool hasPermission;
   final bool isInitialized;
-  
-  const VoiceState({
+
+  VoiceState({
     this.isListening = false,
     this.isProcessing = false,
     this.isSpeaking = false,
     this.recognizedText = '',
-    this.errorMessage,
+    this.error,
+    this.hasPermission = false,
     this.isInitialized = false,
   });
-  
-  bool get hasError => errorMessage != null;
-  
+
   VoiceState copyWith({
     bool? isListening,
     bool? isProcessing,
     bool? isSpeaking,
     String? recognizedText,
-    String? errorMessage,
+    String? error,
+    bool? hasPermission,
     bool? isInitialized,
   }) {
     return VoiceState(
@@ -38,207 +39,290 @@ class VoiceState {
       isProcessing: isProcessing ?? this.isProcessing,
       isSpeaking: isSpeaking ?? this.isSpeaking,
       recognizedText: recognizedText ?? this.recognizedText,
-      errorMessage: errorMessage,
+      error: error ?? this.error,
+      hasPermission: hasPermission ?? this.hasPermission,
       isInitialized: isInitialized ?? this.isInitialized,
     );
   }
 }
 
-// Voice Provider
+// Voice provider notifier
 class VoiceNotifier extends StateNotifier<VoiceState> {
+  VoiceNotifier() : super(VoiceState());
+
   final SpeechToText _speechToText = SpeechToText();
   final FlutterTts _flutterTts = FlutterTts();
-  final AnalyticsService _analytics;
-  
-  VoiceNotifier(this._analytics) : super(const VoiceState());
-  
-  Future<void> initialize() async {
+  bool _isInitialized = false;
+
+  // Initialize voice services
+  Future<void> initializeVoice() async {
+    if (_isInitialized) return;
+
     try {
-      final speechAvailable = await _speechToText.initialize(
-        onError: _onSpeechError,
-        onStatus: _onSpeechStatus,
-      );
-      
-      if (!speechAvailable) {
+      // Request microphone permission
+      final permissionStatus = await Permission.microphone.request();
+      final hasPermission = permissionStatus == PermissionStatus.granted;
+
+      if (!hasPermission) {
         state = state.copyWith(
-          errorMessage: 'Speech recognition not available',
+          error: 'Microphone permission is required for voice features',
+          hasPermission: false,
         );
         return;
       }
-      
-      await _initializeTts();
-      
+
+      // Initialize speech to text
+      final speechAvailable = await _speechToText.initialize(
+        onError: (error) {
+          if (kDebugMode) {
+            print('❌ Speech recognition error: ${error.errorMsg}');
+          }
+          state = state.copyWith(
+            error: 'Speech recognition error: ${error.errorMsg}',
+            isListening: false,
+          );
+          analytics.AnalyticsService().trackSpeechRecognitionError(error.errorMsg);
+        },
+        onStatus: (status) {
+          if (kDebugMode) {
+            print('🗣️ Speech status: $status');
+          }
+        },
+      );
+
+      if (!speechAvailable) {
+        state = state.copyWith(
+          error: 'Speech recognition not available on this device',
+          hasPermission: hasPermission,
+        );
+        return;
+      }
+
+      // Initialize text to speech
+      await _flutterTts.setLanguage('en-US');
+      await _flutterTts.setSpeechRate(0.5); // Slower rate for seniors
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.setPitch(1.0);
+
+      // Set TTS callbacks
+      _flutterTts.setStartHandler(() {
+        state = state.copyWith(isSpeaking: true);
+      });
+
+      _flutterTts.setCompletionHandler(() {
+        state = state.copyWith(isSpeaking: false);
+      });
+
+      _flutterTts.setErrorHandler((msg) {
+        if (kDebugMode) {
+          print('❌ TTS error: $msg');
+        }
+        state = state.copyWith(
+          error: 'Text-to-speech error: $msg',
+          isSpeaking: false,
+        );
+      });
+
+      _isInitialized = true;
       state = state.copyWith(
+        hasPermission: hasPermission,
         isInitialized: true,
-        errorMessage: null,
+        error: null,
+      );
+
+      if (kDebugMode) {
+        print('✅ Voice services initialized successfully');
+      }
+
+    } catch (e) {
+      state = state.copyWith(
+        error: 'Failed to initialize voice services: ${e.toString()}',
+        hasPermission: false,
+        isInitialized: false,
       );
       
-      if (LaunchConfig.analyticsEnabled) {
-        _analytics.trackEvent('voice_initialized');
+      if (kDebugMode) {
+        print('❌ Voice initialization failed: $e');
+      }
+    }
+  }
+
+  // Start listening for speech
+  Future<void> startListening() async {
+    if (!state.isInitialized || !state.hasPermission) {
+      await initializeVoice();
+      if (!state.isInitialized) return;
+    }
+
+    if (state.isListening) return;
+
+    try {
+      state = state.copyWith(
+        isListening: true,
+        recognizedText: '',
+        error: null,
+      );
+
+      await _speechToText.listen(
+        onResult: (result) {
+          state = state.copyWith(
+            recognizedText: result.recognizedWords,
+          );
+          
+          if (result.finalResult) {
+            _handleSpeechResult(result.recognizedWords);
+          }
+        },
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 3),
+        partialResults: true,
+        localeId: 'en_US',
+        onSoundLevelChange: (level) {
+          // Could be used for visual feedback
+        },
+      );
+
+      // Track analytics
+      analytics.AnalyticsService().trackVoiceInteractionStart();
+
+    } catch (e) {
+      state = state.copyWith(
+        isListening: false,
+        error: 'Failed to start listening: ${e.toString()}',
+      );
+      
+      if (kDebugMode) {
+        print('❌ Failed to start listening: $e');
+      }
+    }
+  }
+
+  // Stop listening
+  Future<void> stopListening() async {
+    if (!state.isListening) return;
+
+    try {
+      await _speechToText.stop();
+      state = state.copyWith(isListening: false);
+      
+      if (kDebugMode) {
+        print('🛑 Stopped listening');
       }
     } catch (e) {
       state = state.copyWith(
-        errorMessage: 'Failed to initialize voice: $e',
+        isListening: false,
+        error: 'Failed to stop listening: ${e.toString()}',
       );
     }
   }
-  
-  Future<void> _initializeTts() async {
-    await _flutterTts.setLanguage('en-US');
-    await _flutterTts.setSpeechRate(0.5); // Slower for seniors
-    await _flutterTts.setVolume(1.0);
-    await _flutterTts.setPitch(1.0);
-    
-    _flutterTts.setCompletionHandler(() {
-      state = state.copyWith(isSpeaking: false);
-    });
-    
-    _flutterTts.setErrorHandler((message) {
-      state = state.copyWith(
-        isSpeaking: false,
-        errorMessage: 'TTS Error: $message',
-      );
-    });
-  }
-  
-  Future<void> startListening() async {
-    if (!state.isInitialized) {
-      await initialize();
-    }
-    
-    if (!_speechToText.isAvailable) {
-      state = state.copyWith(
-        errorMessage: 'Speech recognition not available',
-      );
-      return;
-    }
-    
-    state = state.copyWith(
-      isListening: true,
-      recognizedText: '',
-      errorMessage: null,
-    );
-    
-    await _speechToText.listen(
-      onResult: _onSpeechResult,
-      listenFor: const Duration(seconds: 30),
-      pauseFor: const Duration(seconds: 3),
-      partialResults: true,
-      localeId: 'en_US',
-      listenMode: ListenMode.confirmation,
-    );
-    
-    if (LaunchConfig.analyticsEnabled) {
-      _analytics.trackEvent('voice_listening_started');
-    }
-  }
-  
-  Future<void> stopListening() async {
-    await _speechToText.stop();
-    state = state.copyWith(isListening: false);
-    
-    if (LaunchConfig.analyticsEnabled) {
-      _analytics.trackEvent('voice_listening_stopped', {
-        'recognized_text_length': state.recognizedText.length,
-      });
-    }
-  }
-  
-  Future<void> speak(String text) async {
-    if (text.isEmpty) return;
-    
-    state = state.copyWith(isSpeaking: true);
-    await _flutterTts.speak(text);
-    
-    if (LaunchConfig.analyticsEnabled) {
-      _analytics.trackEvent('voice_speaking', {
-        'text_length': text.length,
-      });
-    }
-  }
-  
-  void _onSpeechResult(result) {
-    state = state.copyWith(
-      recognizedText: result.recognizedWords,
-      isProcessing: !result.finalResult,
-    );
-    
-    if (result.finalResult) {
-      state = state.copyWith(isListening: false);
-      _processRecognizedText(result.recognizedWords);
-    }
-  }
-  
-  void _onSpeechError(error) {
+
+  // Handle speech recognition result
+  void _handleSpeechResult(String recognizedText) async {
+    if (recognizedText.trim().isEmpty) return;
+
     state = state.copyWith(
       isListening: false,
-      isProcessing: false,
-      errorMessage: 'Speech error: ${error.errorMsg}',
+      isProcessing: true,
     );
-    
-    if (LaunchConfig.analyticsEnabled) {
-      _analytics.trackEvent('speech_recognition_error', {
-        'error_type': error.errorMsg,
-      });
-    }
-  }
-  
-  void _onSpeechStatus(status) {
-    // Handle speech status changes
-    if (status == 'listening') {
-      state = state.copyWith(isListening: true);
-    } else if (status == 'notListening') {
-      state = state.copyWith(isListening: false);
-    }
-  }
-  
-  Future<void> _processRecognizedText(String text) async {
-    if (text.isEmpty) return;
-    
-    state = state.copyWith(isProcessing: true);
-    
+
     try {
-      // TODO: Send to LLM and get response
-      // For now, just echo back
-      final response = "I heard you say: $text";
+      // TODO: Process the recognized text with LLM
+      // For now, just echo back the text
+      final response = 'You said: $recognizedText';
+      
       await speak(response);
       
-      if (LaunchConfig.analyticsEnabled) {
-        _analytics.trackEvent('question_processed', {
-          'question_length': text.length,
-        });
-      }
+      // Track analytics
+      analytics.AnalyticsService().trackQuestionAsked('echo', recognizedText.length);
+      analytics.AnalyticsService().trackVoiceInteractionComplete(true);
+      
+      state = state.copyWith(isProcessing: false);
+      
     } catch (e) {
       state = state.copyWith(
-        errorMessage: 'Failed to process speech: $e',
+        isProcessing: false,
+        error: 'Failed to process speech: ${e.toString()}',
       );
-    } finally {
-      state = state.copyWith(isProcessing: false);
+      
+      analytics.AnalyticsService().trackVoiceInteractionComplete(false);
+      
+      if (kDebugMode) {
+        print('❌ Failed to process speech: $e');
+      }
     }
   }
-  
+
+  // Speak text using TTS
+  Future<void> speak(String text) async {
+    if (!state.isInitialized) {
+      await initializeVoice();
+      if (!state.isInitialized) return;
+    }
+
+    try {
+      // Stop any current speech
+      await _flutterTts.stop();
+      
+      // Speak the text
+      await _flutterTts.speak(text);
+      
+      // Track analytics
+      analytics.AnalyticsService().trackTtsSpoken('flutter_tts', text.length);
+      
+      if (kDebugMode) {
+        print('🔊 Speaking: $text');
+      }
+      
+    } catch (e) {
+      state = state.copyWith(
+        error: 'Failed to speak: ${e.toString()}',
+        isSpeaking: false,
+      );
+      
+      if (kDebugMode) {
+        print('❌ Failed to speak: $e');
+      }
+    }
+  }
+
+  // Stop speaking
+  Future<void> stopSpeaking() async {
+    try {
+      await _flutterTts.stop();
+      state = state.copyWith(isSpeaking: false);
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Failed to stop speaking: $e');
+      }
+    }
+  }
+
+  // Clear error
   void clearError() {
-    state = state.copyWith(errorMessage: null);
+    state = state.copyWith(error: null);
+  }
+
+  // Dispose resources
+  void dispose() {
+    _speechToText.cancel();
+    _flutterTts.stop();
   }
 }
 
-// Provider
+// Provider definition
 final voiceProvider = StateNotifierProvider<VoiceNotifier, VoiceState>((ref) {
-  final analytics = ref.read(analyticsServiceProvider);
-  return VoiceNotifier(analytics);
+  return VoiceNotifier();
 });
 
-// Analytics Service Provider (placeholder)
-final analyticsServiceProvider = Provider<AnalyticsService>((ref) {
-  return AnalyticsService();
+// Convenience providers
+final isListeningProvider = Provider<bool>((ref) {
+  return ref.watch(voiceProvider).isListening;
 });
 
-// lib/core/services/analytics_service.dart
-class AnalyticsService {
-  Future<void> trackEvent(String eventName, [Map<String, dynamic>? parameters]) async {
-    // TODO: Implement Firebase Analytics
-    if (LaunchConfig.verboseLogging) {
-      print('Analytics Event: $eventName ${parameters ?? ''}');
-    }
-  }
-}
+final recognizedTextProvider = Provider<String>((ref) {
+  return ref.watch(voiceProvider).recognizedText;
+});
+
+final hasVoicePermissionProvider = Provider<bool>((ref) {
+  return ref.watch(voiceProvider).hasPermission;
+});
