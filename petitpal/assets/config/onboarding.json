@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "id": "welcome",
+      "title": "Welcome to PetitPal",
+      "subtitle": "Your voice-first assistant",
+      "voice_text": "Welcome to PetitPal! I'm your voice-first assistant, designed to help you with questions, conversations, and daily tasks. Let's get you set up.",
+      "action": "Get Started"
+    },
+    {
+      "id": "voice_setup",
+      "title": "Voice Setup",
+      "subtitle": "Let's test your microphone",
+      "voice_text": "First, let's make sure I can hear you clearly. I'll need permission to use your microphone. This stays private on your device.",
+      "action": "Test Voice"
+    },
+    {
+      "id": "theme_selection", 
+      "title": "Choose Your Theme",
+      "subtitle": "Pick what looks best for you",
+      "voice_text": "Now let's choose a theme that's comfortable for your eyes. You can always change this later in settings.",
+      "action": "Choose Theme"
+    },
+    {
+      "id": "llm_setup",
+      "title": "AI Assistant Setup",
+      "subtitle": "Connect your AI provider",
+      "voice_text": "To give you the best responses, you'll need to add an API key from an AI provider like OpenAI, Google, or others. This is optional - you can skip for now.",
+      "action": "Setup Later",
+      "secondary_action": "Add Key Now"
+    },
+    {
+      "id": "complete",
+      "title": "All Set!",
+      "subtitle": "PetitPal is ready to help",
+      "voice_text": "Perfect! PetitPal is now ready to assist you. Just tap the microphone button and start talking. I'll help you with questions, information, and conversations.",
+      "action": "Start Using PetitPal"
+    }
+  ]
+}

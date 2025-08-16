@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "default_theme_id": "light",
+  "themes": [
+    {
+      "id": "light",
+      "display_name": "Light Theme",
+      "kind": "light",
+      "description": "Clean and bright interface",
+      "voice_description_key": "theme_desc_light"
+    },
+    {
+      "id": "dark",
+      "display_name": "Dark Theme", 
+      "kind": "dark",
+      "description": "Easy on the eyes",
+      "voice_description_key": "theme_desc_dark"
+    },
+    {
+      "id": "high_contrast",
+      "display_name": "High Contrast",
+      "kind": "high_contrast",
+      "description": "Maximum readability",
+      "voice_description_key": "theme_desc_high_contrast"
+    },
+    {
+      "id": "system",
+      "display_name": "System Adaptive",
+      "kind": "dynamic",
+      "fallback_theme_id": "dark",
+      "description": "Follows your phone's settings",
+      "voice_description_key": "theme_desc_system"
+    }
+  ]
+}

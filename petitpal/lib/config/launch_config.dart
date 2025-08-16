@@ -1,12 +1,26 @@
-// Controls production toggles from one place.
 class LaunchConfig {
-  static const String envName = String.fromEnvironment('ENV', defaultValue: 'dev');
-  static const bool isProductionReady = bool.fromEnvironment('PROD_READY', defaultValue: false);
-
-  static bool get analyticsEnabled => envName == 'prod' && isProductionReady;
-  static bool get crashlyticsEnabled => envName == 'prod' && isProductionReady;
-  static bool get sentryEnabled => envName != 'dev'; // enable for staging/prod
-  static bool get debugOverlays => envName != 'prod';
-
-  static const String mobileSentryDsn = 'https://564ee25c345784dc11c8261c53dd9a0a@o4509830944522240.ingest.de.sentry.io/4509831015366736';
+  // CRITICAL: Set to true before production launch
+  static const bool isProductionReady = false;
+  
+  // Analytics (disabled in development)
+  static bool get analyticsEnabled => isProductionReady;
+  static bool get crashlyticsEnabled => isProductionReady;
+  static bool get sentryEnabled => isProductionReady;
+  
+  // API Configuration
+  static String get workerBaseUrl => isProductionReady 
+      ? 'https://petitpal-api.kristyc.workers.dev'
+      : 'https://dev-petitpal-api.kristyc.workers.dev';
+  
+  // Feature Flags
+  static const bool enableHotwordDetection = true;
+  static const bool enableFamilySharing = true;
+  static const bool enableMultipleLLMs = true;
+  static const bool enableVoiceOnboarding = true;
+  static const bool enablePremiumAnimations = true;
+  
+  // Debug Features (only in development)
+  static bool get showDebugBanner => !isProductionReady;
+  static bool get enableDebugMenu => !isProductionReady;
+  static bool get verboseLogging => !isProductionReady;
 }

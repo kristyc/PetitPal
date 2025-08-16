@@ -1,8 +1,11 @@
-class Analytics {
-  static bool enabled = false;
-  static void init({required bool enable}) { enabled = enable; }
-  static void logEvent(String name, Map<String, Object?> params) {
-    if (!enabled) return;
-    // TODO: integrate Firebase Analytics
+import 'package:sentry_flutter/sentry_flutter.dart';
+import '../../config/internal_config.dart';
+
+class PetitAnalytics {
+  static Future<void> bootstrap() async {
+    if (InternalConfig.sentryEnabled && InternalConfig.sentryDsn.isNotEmpty) {
+      await SentryFlutter.init((o) { o.dsn = InternalConfig.sentryDsn; });
+    }
   }
+  static Future<void> log(String name, [Map<String, Object?> params = const {}]) async {}
 }

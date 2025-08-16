@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Use this rule to set which files are backed up to Android Auto Backup.  -->
+        <include domain="sharedpref" path="."/>
+        <exclude domain="sharedpref" path="device.xml"/>
+    </cloud-backup>
+    <!-- Use this rule to set which files are backed up to Android D2D.  -->
+    <device-transfer>
+        <include domain="sharedpref" path="."/>
+        <exclude domain="sharedpref" path="device.xml"/>
+    </device-transfer>
+</data-extraction-rules>

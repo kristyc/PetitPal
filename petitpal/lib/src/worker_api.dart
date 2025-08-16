@@ -1,46 +1,32 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
 import '../config/internal_config.dart';
+import 'providers/llm_keys.dart';
 
 class WorkerApi {
-  final String deviceId;
-  WorkerApi(this.deviceId);
+  static String? _deviceId;
+  static Future<String> _ensureDevice() async { _deviceId ??= const Uuid().v4(); return _deviceId!; }
 
-  Map<String, String> _headers({Map<String, String>? extra}) => {
-    "Content-Type": "application/json",
-    "X-Device-ID": deviceId,
-    ...?extra,
-  };
-
-  Future<Map<String, dynamic>> health() async {
-    final r = await http.get(Uri.parse("${InternalConfig.workerBaseUrl}/health"));
-    return jsonDecode(r.body) as Map<String, dynamic>;
-  }
-
-  Future<Map<String, dynamic>> saveEncryptedBackup(Map<String, dynamic> encrypted) async {
-    final r = await http.post(
-      Uri.parse("${InternalConfig.workerBaseUrl}/api/keys/save"),
-      headers: _headers(),
-      body: jsonEncode(encrypted),
+  static Future<String?> chat({required String text}) async {
+    final device = await _ensureDevice();
+    final provider = await LlmKeys.selectedProvider() ?? 'openai';
+    final key = await LlmKeys.keyFor(provider);
+    final url = Uri.parse("${InternalConfig.workerBaseUrl}/api/chat");
+    final r = await http.post(url,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Device-ID": device,
+        "X-Provider": provider,
+        if (key != null && key.isNotEmpty) "X-Api-Key": key,
+      },
+      body: jsonEncode({"text": text}),
     );
-    return jsonDecode(r.body) as Map<String, dynamic>;
-  }
-
-  Future<Map<String, dynamic>> chat({
-    required String text,
-    String? providerHint,
-    Map<String, String>? liveKeys, // TEMP: keys passed only for the live call; never stored
-  }) async {
-    final body = {
-      "text": text,
-      if (providerHint != null) "provider_hint": providerHint,
-      if (liveKeys != null) "live_keys": liveKeys,
-    };
-    final r = await http.post(
-      Uri.parse("${InternalConfig.workerBaseUrl}/api/chat"),
-      headers: _headers(),
-      body: jsonEncode(body),
-    );
-    return jsonDecode(r.body) as Map<String, dynamic>;
+    if (r.statusCode == 200) {
+      final data = jsonDecode(r.body) as Map<String, dynamic>;
+      return data["summary_tts"] ?? data["text"];
+    } else {
+      return "I couldn't get an answer right now. (${r.statusCode})";
+    }
   }
 }

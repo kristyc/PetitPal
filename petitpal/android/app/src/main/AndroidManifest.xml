@@ -1,10 +1,20 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.petitpal.app">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Permissions -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Features -->
+    <uses-feature android:name="android.hardware.microphone" android:required="true" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
-        android:name="${applicationName}"
         android:label="PetitPal"
-        android:icon="@mipmap/ic_launcher">
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false">
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -13,12 +23,28 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+
+            <!-- Standard App Launch -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            
+            <!-- Deep Link Support for Family Sharing -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="petitpal" />
+            </intent-filter>
+
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme" />
         </activity>
 
-        <meta-data android:name="flutterEmbedding" android:value="2" />
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
     </application>
 </manifest>
