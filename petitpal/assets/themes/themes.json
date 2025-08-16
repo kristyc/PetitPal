@@ -1,35 +1,130 @@
 {
   "version": 1,
-  "default_theme_id": "light",
+  "default_theme_id": "high_contrast_dark",
   "themes": [
     {
-      "id": "light",
-      "display_name": "Light Theme",
-      "kind": "light",
-      "description": "Clean and bright interface",
-      "voice_description_key": "theme_desc_light"
+      "id": "high_contrast_dark",
+      "display_name": "High Contrast Dark",
+      "colors": {
+        "dark": {
+          "primary": "4294967295",
+          "onPrimary": "4278190080",
+          "secondary": "4293726455",
+          "onSecondary": "4278190080",
+          "error": "4293977744",
+          "onError": "4278190080",
+          "background": "4278190080",
+          "onBackground": "4294967295",
+          "surface": "4279176978",
+          "onSurface": "4294967295"
+        },
+        "light": {
+          "primary": "4278190080",
+          "onPrimary": "4294967295",
+          "secondary": "4280824639",
+          "onSecondary": "4294967295",
+          "error": "4291821568",
+          "onError": "4294967295",
+          "background": "4294967295",
+          "onBackground": "4278190080",
+          "surface": "4294045938",
+          "onSurface": "4278190080"
+        }
+      },
+      "tokens": { "corner_radius": 16, "motion": { "fast": 80, "normal": 140, "slow": 220 } }
     },
     {
-      "id": "dark",
-      "display_name": "Dark Theme", 
-      "kind": "dark",
-      "description": "Easy on the eyes",
-      "voice_description_key": "theme_desc_dark"
+      "id": "high_contrast_light",
+      "display_name": "High Contrast Light",
+      "colors": {
+        "dark": {
+          "primary": "4294967295",
+          "onPrimary": "4278190080",
+          "secondary": "4288657317",
+          "onSecondary": "4278190080",
+          "error": "4293977744",
+          "onError": "4278190080",
+          "background": "4280295454",
+          "onBackground": "4294967295",
+          "surface": "4281611310",
+          "onSurface": "4294967295"
+        },
+        "light": {
+          "primary": "4278190080",
+          "onPrimary": "4294967295",
+          "secondary": "4280824639",
+          "onSecondary": "4294967295",
+          "error": "4291821568",
+          "onError": "4294967295",
+          "background": "4294967295",
+          "onBackground": "4278190080",
+          "surface": "4293980405",
+          "onSurface": "4278190080"
+        }
+      },
+      "tokens": { "corner_radius": 14, "motion": { "fast": 80, "normal": 140, "slow": 220 } }
     },
     {
-      "id": "high_contrast",
-      "display_name": "High Contrast",
-      "kind": "high_contrast",
-      "description": "Maximum readability",
-      "voice_description_key": "theme_desc_high_contrast"
+      "id": "modern_dark",
+      "display_name": "Modern Dark",
+      "colors": {
+        "dark": {
+          "primary": "4286578689",
+          "onPrimary": "4278190080",
+          "secondary": "4289533019",
+          "onSecondary": "4278190080",
+          "error": "4293451674",
+          "onError": "4278190080",
+          "background": "4279178252",
+          "onBackground": "4293858817",
+          "surface": "4279835426",
+          "onSurface": "4293858817"
+        },
+        "light": {
+          "primary": "4278226785",
+          "onPrimary": "4294967295",
+          "secondary": "4279632544",
+          "onSecondary": "4294967295",
+          "error": "4280150456",
+          "onError": "4294967295",
+          "background": "4294967295",
+          "onBackground": "4279308561",
+          "surface": "4294374632",
+          "onSurface": "4279308561"
+        }
+      },
+      "tokens": { "corner_radius": 16, "motion": { "fast": 90, "normal": 160, "slow": 240 } }
     },
     {
-      "id": "system",
-      "display_name": "System Adaptive",
-      "kind": "dynamic",
-      "fallback_theme_id": "dark",
-      "description": "Follows your phone's settings",
-      "voice_description_key": "theme_desc_system"
+      "id": "modern_light",
+      "display_name": "Modern Light",
+      "colors": {
+        "dark": {
+          "primary": "4284776226",
+          "onPrimary": "4278190080",
+          "secondary": "4290519853",
+          "onSecondary": "4278190080",
+          "error": "4293977744",
+          "onError": "4278190080",
+          "background": "4279176975",
+          "onBackground": "4293652223",
+          "surface": "4280295454",
+          "onSurface": "4293652223"
+        },
+        "light": {
+          "primary": "4278196897",
+          "onPrimary": "4294967295",
+          "secondary": "4289139760",
+          "onSecondary": "4294967295",
+          "error": "4281007768",
+          "onError": "4294967295",
+          "background": "4294967295",
+          "onBackground": "4279173137",
+          "surface": "4294046197",
+          "onSurface": "4279173137"
+        }
+      },
+      "tokens": { "corner_radius": 14, "motion": { "fast": 90, "normal": 160, "slow": 240 } }
     }
   ]
 }

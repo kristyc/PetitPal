@@ -1,13 +1,1 @@
-name = "petitpal-api"
-main = "worker.js"
-compatibility_date = "2024-12-01"
-
-kv_namespaces = [
-  { binding = "petitpal-kv", id = "00000000000000000000000000000000", preview_id = "11111111111111111111111111111111" }
-]
-
-[vars]
-# Feature flags can go here
-
-[observability]
-enabled = true
+'"$@"'
