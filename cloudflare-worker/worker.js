@@ -11,6 +11,10 @@ export default {
     }
 
     if (url.pathname === "/api/voice_chat" && request.method === "POST") {
+      const langHeader = request.headers.get("X-App-Locale") || "";
+      // Parse like "en-US" -> "en"
+      const replyLang = (langHeader.split(',')[0] || '').split('-')[0].toLowerCase() || 'en';
+      const ttsVoice = request.headers.get("X-TTS-Voice") || "alloy";
       const auth = request.headers.get("Authorization");
       if (!auth || !auth.startsWith("Bearer ")) {
         return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
@@ -23,6 +27,7 @@ export default {
       const form = new FormData();
       form.append("file", audioBlob, "audio.m4a");
       form.append("model", "whisper-1");
+      form.append("language", replyLang);
 
       const tr = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
@@ -45,7 +50,7 @@ export default {
         body: JSON.stringify({
           model,
           messages: [
-            { role: "system", content: "You are a concise nutrition assistant. Keep answers short and clear." },
+            { role: "system", content: `You are a helpful voice-based assistant. Keep answers short and clear. Reply ONLY in ${replyLang}.` },
             { role: "user", content: transcript },
           ],
           temperature: 0.2,
@@ -92,7 +97,27 @@ export default {
       });
     }
 
-    if (url.pathname === "/api/chat" && request.method === "POST") {
+    
+    if (url.pathname === "/api/tts_sample" && request.method === "GET") {
+      const auth = request.headers.get("Authorization");
+      if (!auth || !auth.startsWith("Bearer ")) {
+        return new Response("unauthorized", { status: 401, headers: corsHeaders });
+      }
+      const voice = url.searchParams.get("voice") || "alloy";
+      const text = url.searchParams.get("text") || `Hi, I'm the ${voice} voice from OpenAI. This is a sample.`;
+      const tts = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": auth },
+        body: JSON.stringify({ model: "gpt-4o-mini-tts", voice, input: text, format: "mp3" }),
+      });
+      if (!tts.ok) {
+        return new Response(await tts.text(), { status: 502, headers: corsHeaders });
+      }
+      const buf = await tts.arrayBuffer();
+      return new Response(buf, { status: 200, headers: { ...corsHeaders, "Content-Type": "audio/mpeg" } });
+    }
+
+if (url.pathname === "/api/chat" && request.method === "POST") {
       const auth = request.headers.get("Authorization");
       if (!auth || !auth.startsWith("Bearer ")) {
         return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
@@ -118,7 +143,7 @@ export default {
         body: JSON.stringify({
           model,
           messages: [
-            { role: "system", content: "You are a concise nutrition assistant. Keep answers short and clear." },
+            { role: "system", content: `You are a helpful voice-based assistant. Keep answers short and clear. Reply ONLY in ${replyLang}.` },
             { role: "user", content: text },
           ],
           temperature: 0.2,
