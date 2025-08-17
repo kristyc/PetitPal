@@ -1,9 +1,8 @@
-import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
@@ -25,7 +24,24 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
   String? _filePath;
   int _fileSize = 0;
   final _player = AudioPlayer();
-  PlayerState _playerState = PlayerState.stopped;
+  final _tts = FlutterTts();
+
+  bool _useWav = false; // toggle between AAC(M4A) and WAV for testing
+
+  @override
+  void initState() {
+    super.initState();
+    _player.setReleaseMode(ReleaseMode.stop);
+    _player.setVolume(1.0);
+    _player.onPlayerComplete.listen((_) {
+      _add('■ Playback completed');
+    });
+  }
+
+  String _mimeFromPath(String path) {
+    if (path.toLowerCase().endsWith('.wav')) return 'audio/wav';
+    return 'audio/m4a';
+  }
 
   void _add(String s) {
     debugPrint('[Diag] ' + s);
@@ -80,14 +96,19 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
         return;
       }
       final dir = await getTemporaryDirectory();
-      final filePath = '${dir.path}/diag_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      await _recorder.start(
-        const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000, sampleRate: 44100),
-        path: filePath,
-      );
-      _add('Recording 2 seconds...');
+      final ext = _useWav ? 'wav' : 'm4a';
+      final filePath = '${dir.path}/diag_${DateTime.now().millisecondsSinceEpoch}.' + ext;
+      final cfg = _useWav
+          ? const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 44100, bitRate: 128000)
+          : const RecordConfig(encoder: AudioEncoder.aacLc, sampleRate: 44100, bitRate: 128000);
+      await _recorder.start(cfg, path: filePath);
+      _add('Recording 2 seconds... (${_useWav ? 'WAV' : 'M4A'})');
+      final sub = _recorder.onAmplitudeChanged(const Duration(milliseconds: 150)).listen((amp) {
+        _add('amp current: ' + amp.current.toString() + ', max: ' + amp.max.toString());
+      });
       await Future.delayed(const Duration(seconds: 2));
       final path = await _recorder.stop();
+      try { await sub.cancel(); } catch (_) {}
       if (path == null) {
         _add('❌ Recorder returned null path.');
         return;
@@ -108,7 +129,7 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
       try {
         final res = await LlmService.voiceChat(
           audio: bytes,
-          mimeType: 'audio/m4a',
+          mimeType: _mimeFromPath(_filePath!),
           openAiApiKey: key!,
         );
         _add('Transcript: ' + (res.transcript ?? '(none)'));
@@ -134,14 +155,19 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
       return;
     }
     final dir = await getTemporaryDirectory();
-    _filePath = '${dir.path}/diag_play_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000, sampleRate: 44100),
-      path: _filePath!,
-    );
-    _add('Recording 3 seconds... speak now');
+    final ext = _useWav ? 'wav' : 'm4a';
+    _filePath = '${dir.path}/diag_play_${DateTime.now().millisecondsSinceEpoch}.' + ext;
+    final cfg = _useWav
+        ? const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 44100, bitRate: 128000)
+        : const RecordConfig(encoder: AudioEncoder.aacLc, sampleRate: 44100, bitRate: 128000);
+    await _recorder.start(cfg, path: _filePath!);
+    _add('Recording 3 seconds... speak now (${_useWav ? 'WAV' : 'M4A'})');
+    final sub = _recorder.onAmplitudeChanged(const Duration(milliseconds: 150)).listen((amp) {
+      _add('amp current: ' + amp.current.toString() + ', max: ' + amp.max.toString());
+    });
     await Future.delayed(const Duration(seconds: 3));
     final path = await _recorder.stop();
+    try { await sub.cancel(); } catch (_) {}
     if (path == null) {
       _add('❌ Recorder returned null path.');
       return;
@@ -158,21 +184,17 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
       return;
     }
     await _player.stop();
+    await _player.setVolume(1.0);
     await _player.play(DeviceFileSource(_filePath!));
     _add('▶ Playing');
-    _player.onPlayerStateChanged.listen((s) {
-      setState(() => _playerState = s);
-    });
   }
 
-  Future<void> _pause() async {
-    await _player.pause();
-    setState(() => _playerState = PlayerState.paused);
-  }
-
-  Future<void> _stop() async {
-    await _player.stop();
-    setState(() => _playerState = PlayerState.stopped);
+  Future<void> _ttsBeep() async {
+    await _tts.stop();
+    await _tts.setSpeechRate(0.9);
+    await _tts.setPitch(1.0);
+    await _tts.speak('Test audio. This verifies your playback path is working.');
+    _add('🔊 TTS test spoken');
   }
 
   Future<void> _sendRecording() async {
@@ -186,9 +208,9 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
       return;
     }
     final bytes = await File(_filePath!).readAsBytes();
-    _add('POST /api/voice_chat with the just-recorded file...');
+    _add('POST /api/voice_chat with the just-recorded file... (${_mimeFromPath(_filePath!)})');
     try {
-      final res = await LlmService.voiceChat(audio: bytes, mimeType: 'audio/m4a', openAiApiKey: key);
+      final res = await LlmService.voiceChat(audio: bytes, mimeType: _mimeFromPath(_filePath!), openAiApiKey: key);
       _add('Transcript: ' + (res.transcript ?? '(none)'));
       _add('Reply: ' + (res.reply ?? '(none)'));
     } catch (e) {
@@ -207,6 +229,7 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
             child: Wrap(
               spacing: 12,
               runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 ElevatedButton(
                   onPressed: _running ? null : _runChecks,
@@ -217,27 +240,27 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
                   icon: const Icon(Icons.fiber_manual_record),
                   label: const Text('Record 3s Test'),
                 ),
-                if (_playerState != PlayerState.playing)
-                  OutlinedButton.icon(
-                    onPressed: _play,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Play Recording'),
-                  )
-                else
-                  OutlinedButton.icon(
-                    onPressed: _pause,
-                    icon: const Icon(Icons.pause),
-                    label: const Text('Pause'),
-                  ),
+                // Encoder toggle
+                FilterChip(
+                  label: Text(_useWav ? 'WAV' : 'M4A'),
+                  selected: _useWav,
+                  onSelected: (v) => setState(() => _useWav = v),
+                  avatar: const Icon(Icons.swap_horiz),
+                ),
                 OutlinedButton.icon(
-                  onPressed: _stop,
-                  icon: const Icon(Icons.stop),
-                  label: const Text('Stop'),
+                  onPressed: _play,
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Play Recording'),
                 ),
                 OutlinedButton.icon(
                   onPressed: _sendRecording,
                   icon: const Icon(Icons.cloud_upload),
                   label: const Text('Send Recording to Worker'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _ttsBeep,
+                  icon: const Icon(Icons.volume_up),
+                  label: const Text('TTS Beep'),
                 ),
               ],
             ),

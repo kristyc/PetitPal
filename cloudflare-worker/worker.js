@@ -59,7 +59,35 @@ export default {
       }
       const data = await chat.json();
       const answer = data?.choices?.[0]?.message?.content ?? "";
-      return new Response(JSON.stringify({ transcript, text: answer }), {
+
+      // Generate TTS audio with OpenAI
+      const tts = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": auth },
+        body: JSON.stringify({
+          model: "gpt-4o-mini-tts",
+          voice: "alloy",
+          input: answer,
+          format: "mp3"
+        }),
+      });
+      if (!tts.ok) {
+        const err = await tts.text();
+        return new Response(JSON.stringify({ transcript, text: answer, tts_error: err, tts_status: tts.status }), {
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+      const audioBuf = await tts.arrayBuffer();
+      // ArrayBuffer -> base64 (chunked to avoid stack overflow)
+      const bytes = new Uint8Array(audioBuf);
+      let binary = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+      }
+      const audio_b64 = btoa(binary);
+
+      return new Response(JSON.stringify({ transcript, text: answer, audio_b64, audio_mime: "audio/mpeg" }), {
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }

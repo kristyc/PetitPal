@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:audioplayers/audioplayers.dart';
 import '../providers.dart';
 import '../services/llm_service.dart';
 
@@ -16,28 +17,39 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final AudioRecorder _recorder = AudioRecorder();
-  final FlutterTts _tts = FlutterTts();
+  final stt.SpeechToText _stt = stt.SpeechToText();
+  bool _sttAvailable = false;
+  final AudioPlayer _player = AudioPlayer();
 
   @override
   void initState() {
     super.initState();
-    _initTts();
+    _initSpeech();
   }
 
-  Future<void> _initTts() async {
-    await _tts.setSpeechRate(0.9);
-    await _tts.setPitch(1.0);
+  Future<void> _initSpeech() async {
+    try {
+      _sttAvailable = await _stt.initialize(
+        onStatus: (s) => debugPrint('stt status: ' + s),
+        onError: (e) => debugPrint('stt error: ' + e.errorMsg),
+      );
+      debugPrint('stt available: $_sttAvailable');
+    } catch (e) {
+      debugPrint('stt init failed: $e');
+    }
   }
 
   @override
   void dispose() {
-    _tts.stop();
+    try { _stt.stop(); } catch (_) {}
+    _player.dispose();
     super.dispose();
   }
 
   Future<void> _toggleRecord() async {
     final recording = ref.read(listeningProvider);
     if (!recording) {
+      // Start
       await Permission.microphone.request();
       final has = await _recorder.hasPermission();
       if (!has) {
@@ -54,14 +66,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         const RecordConfig(
           encoder: AudioEncoder.aacLc,
           bitRate: 128000,
-          sampleRate: 44100),
+          sampleRate: 44100,
+        ),
         path: filePath,
       );
+      // Live STT for on-screen transcript
+      if (!_sttAvailable) {
+        try { _sttAvailable = await _stt.initialize(); } catch (_) {}
+      }
+      if (_sttAvailable) {
+        try {
+          await _stt.listen(
+            onResult: (res) {
+              ref.read(transcriptProvider.notifier).state = res.recognizedWords;
+            },
+            listenMode: stt.ListenMode.dictation,
+            partialResults: true,
+          );
+        } catch (e) {
+          debugPrint('stt.listen failed: $e');
+        }
+      }
       ref.read(listeningProvider.notifier).state = true;
       ref.read(transcriptProvider.notifier).state = '';
       ref.read(replyProvider.notifier).state = '';
     } else {
+      // Stop
       ref.read(listeningProvider.notifier).state = false;
+      try { await _stt.stop(); } catch (_) {}
       final path = await _recorder.stop();
       if (path == null) return;
       final file = File(path);
@@ -78,10 +110,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
       try {
         final res = await LlmService.voiceChat(audio: bytes, mimeType: 'audio/m4a', openAiApiKey: key);
-        ref.read(transcriptProvider.notifier).state = res.transcript ?? '';
+        // Keep live text if OpenAI transcript missing; otherwise show OpenAI's transcript
+        final live = ref.read(transcriptProvider);
+        ref.read(transcriptProvider.notifier).state = res.transcript ?? live;
         ref.read(replyProvider.notifier).state = res.reply ?? '';
-        if ((res.reply ?? '').isNotEmpty) {
-          await _tts.speak(res.reply!);
+
+        // Prefer OpenAI TTS audio for playback
+        if (res.audioBytes != null && res.audioBytes!.isNotEmpty) {
+          final dir = await getTemporaryDirectory();
+          final p = '${dir.path}/reply_${DateTime.now().millisecondsSinceEpoch}.mp3';
+          final f = File(p);
+          await f.writeAsBytes(res.audioBytes!);
+          await _player.stop();
+          await _player.setVolume(1.0);
+          await _player.play(DeviceFileSource(p));
         }
       } catch (e) {
         ref.read(replyProvider.notifier).state = 'Error: $e';
@@ -124,18 +166,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       children: [
                         Row(
                           children: [
-                            Image.asset('assets/app/intro.png', height: 56, width: 56, errorBuilder: (_, __, ___) => const Icon(Icons.local_florist, size: 56)),
+                            const Icon(Icons.local_florist, size: 56),
                             const SizedBox(width: 16),
                             Expanded(
-                              child: Text('Ask me anything by voice!',
-                                  style: theme.textTheme.bodyLarge),
+                              child: Text(
+                                'Ask anything that is on your mind', style: theme.textTheme.bodyLarge,
+                              ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Tap the mic, speak your question, tap again to send. I’ll transcribe and answer, then speak back.',
-                          style: theme.textTheme.bodyMedium!.copyWith(color: Colors.white70),
+                          'Tap to start, speak, tap again to send.', style: theme.textTheme.bodyMedium!.copyWith(color: Colors.white70),
                         ),
                       ],
                     ),
