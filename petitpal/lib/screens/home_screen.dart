@@ -1,18 +1,20 @@
 import 'dart:async';
 import 'dart:io';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:audioplayers/audioplayers.dart';
+
 import '../providers.dart';
 import '../services/llm_service.dart';
+import '../utils/markdown.dart';
 import '../widgets/typing_dots.dart';
 import '../widgets/thinking_backdrop.dart';
-import '../dev_settings.dart';
+import '../state/chat_phase.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -21,273 +23,230 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  final AudioRecorder _recorder = AudioRecorder();
+  final _recorder = AudioRecorder();
+  final _player = AudioPlayer();
   final stt.SpeechToText _stt = stt.SpeechToText();
   bool _sttAvailable = false;
-  final AudioPlayer _player = AudioPlayer();
-  int _session = 0;
-  bool _isSpeaking = false;
+  String? _currentRecPath;
 
   @override
   void initState() {
     super.initState();
-    _player.setReleaseMode(ReleaseMode.stop);
-    _player.onPlayerStateChanged.listen((s) { setState(() { _isSpeaking = s == PlayerState.playing; }); });
-    _initSpeech();
-  }
-
-  Future<void> _initSpeech() async {
-    try {
-      _sttAvailable = await _stt.initialize(
-        onStatus: (s) => debugPrint('stt status: ' + s),
-        onError: (e) => debugPrint('stt error: ' + e.errorMsg),
-      );
-    } catch (e) {
-      debugPrint('stt init failed: $e');
-    }
+    _player.onPlayerStateChanged.listen((s) {
+      if (s == PlayerState.completed || s == PlayerState.stopped) {
+        if (ref.read(chatPhaseProvider) == ChatPhase.speaking) {
+          ref.read(chatPhaseProvider.notifier).state = ChatPhase.idle;
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
-    try { _stt.stop(); } catch (_) {}
     _player.dispose();
     super.dispose();
   }
 
+  Future<String> _newRecordPath() async {
+    final dir = await getTemporaryDirectory();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    return '${dir.path}/pp_rec_$ts.m4a';
+  }
+
   Future<void> _toggleRecord() async {
-    final recording = ref.read(listeningProvider);
-    if (!recording) {
-      // START
-      try { await _player.stop(); } catch (_) {}
-      _session++;
+    final phase = ref.read(chatPhaseProvider);
+    final listening = ref.read(listeningProvider);
 
-      if (!DevSettings.disableHaptics) { await HapticFeedback.mediumImpact(); }
-
-      await Permission.microphone.request();
+    if (!listening && (phase == ChatPhase.idle)) {
+      // Start listening
+      try { await HapticFeedback.mediumImpact(); } catch (_) {}
       final has = await _recorder.hasPermission();
       if (!has) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Mic permission denied')),
-          );
-        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mic permission required.')));
         return;
       }
+      _currentRecPath = await _newRecordPath();
+      await _recorder.start(const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        sampleRate: 44100,
+        numChannels: 1,
+        bitRate: 128000,
+      ), path: _currentRecPath!);
 
-      final dir = await getTemporaryDirectory();
-      final filePath = '${dir.path}/petitpal_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      await _recorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
-        ),
-        path: filePath,
-      );
-
-      if (!_sttAvailable) {
-        try { _sttAvailable = await _stt.initialize(); } catch (_) {}
-      }
-      if (_sttAvailable) {
-        try {
-          final sys = await _stt.systemLocale();
-          final loc = sys?.localeId;
+      // Live STT
+      try {
+        _sttAvailable = await _stt.initialize();
+        if (_sttAvailable) {
           await _stt.listen(
             onResult: (res) {
               ref.read(transcriptProvider.notifier).state = res.recognizedWords;
             },
             listenMode: stt.ListenMode.dictation,
-            partialResults: true,
-            localeId: loc,
-            pauseFor: const Duration(seconds: 60),
-            listenFor: const Duration(minutes: 10),
           );
-        } catch (e) {
-          debugPrint('stt.listen failed: $e');
         }
-      }
-
+      } catch (_) {}
       ref.read(listeningProvider.notifier).state = true;
-      ref.read(transcriptProvider.notifier).state = '';
+      ref.read(chatPhaseProvider.notifier).state = ChatPhase.listening;
       ref.read(replyProvider.notifier).state = '';
-    } else {
-      // STOP
-      if (!DevSettings.disableHaptics) { await HapticFeedback.mediumImpact(); }
-      ref.read(listeningProvider.notifier).state = false;
-      final int reqSession = _session;
-      ref.read(answeringProvider.notifier).state = true;
-
-      // Only stop STT now -> OS end chime plays once on purpose.
-      try { await _stt.stop(); } catch (_) {}
-
-      final path = await _recorder.stop();
-      if (path == null) {
-        ref.read(answeringProvider.notifier).state = false;
-        return;
-      }
-
-      final file = File(path);
-      final bytes = await file.readAsBytes();
-
-      final key = ref.read(openAiKeyProvider);
-      if (key == null || key.isEmpty) {
-        ref.read(answeringProvider.notifier).state = false;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please set your OpenAI key in Settings.')),
-          );
-        }
-        return;
-      }
-      try {
-        final ttsVoice = ref.read(voiceProvider);
-        final res = await LlmService.voiceChat(
-          audio: bytes,
-          mimeType: 'audio/m4a',
-          openAiApiKey: key,
-          voice: ttsVoice,
-        );
-        if (reqSession == _session) {
-          final live = ref.read(transcriptProvider);
-          ref.read(transcriptProvider.notifier).state = res.transcript ?? live;
-          ref.read(replyProvider.notifier).state = res.reply ?? '';
-        }
-        ref.read(answeringProvider.notifier).state = false;
-
-        if (reqSession == _session && !ref.read(listeningProvider) && res.audioBytes != null && res.audioBytes!.isNotEmpty) {
-          final dir = await getTemporaryDirectory();
-          final p = '${dir.path}/reply_${DateTime.now().millisecondsSinceEpoch}.mp3';
-          final f = File(p);
-          await f.writeAsBytes(res.audioBytes!);
-          await _player.stop();
-          await _player.setVolume(1.0);
-          await _player.play(DeviceFileSource(p));
-        }
-      } catch (e) {
-        ref.read(answeringProvider.notifier).state = false;
-        ref.read(replyProvider.notifier).state = 'Error: $e';
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('LLM error: $e')));
-        }
-      }
+      return;
     }
+
+    // Stop listening and send
+    try { await HapticFeedback.mediumImpact(); } catch (_) {}
+    ref.read(listeningProvider.notifier).state = false;
+    ref.read(chatPhaseProvider.notifier).state = ChatPhase.thinking;
+    try { await _stt.stop(); } catch (_) {}
+    final path = await _recorder.stop();
+    final recPath = path ?? _currentRecPath;
+    _currentRecPath = null;
+    if (recPath == null) {
+      ref.read(chatPhaseProvider.notifier).state = ChatPhase.idle;
+      return;
+    }
+
+    // Load audio and send to worker
+    final key = ref.read(openAiKeyProvider);
+    if (key == null || key.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter your API key in Settings')));
+      ref.read(chatPhaseProvider.notifier).state = ChatPhase.idle;
+      return;
+    }
+
+    try {
+      final bytes = await File(recPath).readAsBytes();
+      // FIX: pass current transcript directly instead of undefined getter
+      final liveTextNow = ref.read(transcriptProvider);
+
+      final res = await LlmService.voiceChat(
+        audio: bytes,
+        mimeType: 'audio/aac',
+        openAiApiKey: key,
+        voice: ref.read(voiceProvider) ?? 'alloy', 
+      );
+
+      final live = ref.read(transcriptProvider);
+      ref.read(transcriptProvider.notifier).state = res.transcript ?? live;
+      final cleaned = MarkdownUtils.clean(res.reply ?? '');
+      ref.read(replyProvider.notifier).state = cleaned;
+
+      if (res.audioBytes != null && res.audioBytes!.isNotEmpty) {
+        final p = await _writeTemp(res.audioBytes!, 'reply.mp3');
+        await _player.stop();
+        await _player.play(DeviceFileSource(p));
+        ref.read(chatPhaseProvider.notifier).state = ChatPhase.speaking;
+      } else {
+        ref.read(chatPhaseProvider.notifier).state = ChatPhase.idle;
+      }
+    } catch (e) {
+      ref.read(replyProvider.notifier).state = 'Error: $e';
+      ref.read(chatPhaseProvider.notifier).state = ChatPhase.idle;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('LLM error: $e')));
+    }
+  }
+
+  Future<String> _writeTemp(List<int> data, String name) async {
+    final dir = await getTemporaryDirectory();
+    final p = '${dir.path}/$name';
+    final f = File(p);
+    await f.writeAsBytes(data, flush: true);
+    return p;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final recording = ref.watch(listeningProvider);
-    final transcript = ref.watch(transcriptProvider);
+    final phase = ref.watch(chatPhaseProvider);
     final reply = ref.watch(replyProvider);
-    final answering = ref.watch(answeringProvider);
+
+    final thinking = phase == ChatPhase.thinking || phase == ChatPhase.speaking;
+    final hasAnswer = reply.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('PetitPal'),
         actions: [
           IconButton(
-            onPressed: () => Navigator.of(context).pushNamed('/settings'),
             icon: const Icon(Icons.settings),
-            tooltip: 'Settings',
+            onPressed: () => Navigator.of(context).pushNamed('/settings'),
           )
         ],
       ),
       body: Stack(
         children: [
-          Positioned.fill(child: ThinkingBackdrop(active: answering || _isSpeaking)),
-          Column(
-            children: [
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white24),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        const Text('👋', style: TextStyle(fontSize: 48)),
-                        const SizedBox(width: 16),
-                        Expanded(child: Text('Ask me anything!', style: theme.textTheme.bodyLarge)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                    // Your Question (Transcript)
-                    Text('Your Question', style: theme.textTheme.titleLarge),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white24),
-                      ),
+          ThinkingBackdrop(active: thinking),
+          if (hasAnswer)
+            Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
                       child: Text(
-                        transcript.isEmpty ? (recording ? 'Listening…' : '—') : transcript,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Answer
-                    Text('Answer', style: theme.textTheme.titleLarge),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white24),
-                      ),
-                      child: answering
-                          ? Row(children: const [TypingDots(), SizedBox(width: 8), Text('Thinking…')])
-                          : ConstrainedBox(
-                              constraints: const BoxConstraints(maxHeight: 360),
-                              child: Scrollbar(
-                                thumbVisibility: true,
-                                child: SingleChildScrollView(
-                                  child: Text(reply.isEmpty ? '—' : reply),
-                                ),
-                              ),
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 24),
-                child: Center(
-                  child: GestureDetector(
-                    onTap: () async { if (_isSpeaking) { await _player.stop(); return; } await _toggleRecord(); },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOut,
-                      height: recording ? 156 : 148,
-                      width: recording ? 156 : 148,
-                      decoration: BoxDecoration(
-                        color: recording ? theme.colorScheme.secondary : theme.colorScheme.primary,
-                        shape: BoxShape.circle,
-                        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 24)],
-                      ),
-                      child: Icon(
-                        recording ? Icons.stop : (_isSpeaking ? Icons.close : Icons.mic),
-                        size: 68,
-                        color: theme.colorScheme.onPrimary,
+                        reply,
+                        textAlign: TextAlign.left,
+                        style: const TextStyle(fontSize: 22, height: 1.4),
                       ),
                     ),
                   ),
                 ),
               ),
-            ],
+            )
+          else
+            Center(child: _statusMessage(phase)),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 32),
+              child: GestureDetector(
+                onTap: _toggleRecord,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  height: 156, width: 156,
+                  decoration: BoxDecoration(
+                    color: (phase == ChatPhase.listening) ? theme.colorScheme.secondary : theme.colorScheme.primary,
+                    shape: BoxShape.circle,
+                    boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 20)],
+                  ),
+                  child: Icon(
+                    (phase == ChatPhase.listening) ? Icons.stop : (thinking ? Icons.close : Icons.mic),
+                    size: 56, color: theme.colorScheme.onPrimary,
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _statusMessage(ChatPhase phase) {
+    if (phase == ChatPhase.listening) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Text('Listening', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
+          SizedBox(width: 8),
+          TypingDots(size: 14),
+        ],
+      );
+    }
+    if (phase == ChatPhase.thinking || phase == ChatPhase.speaking) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Text('Thinking', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
+          SizedBox(width: 8),
+          TypingDots(size: 14),
+        ],
+      );
+    }
+    return const Text('Ask anything!', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w600));
   }
 }

@@ -1,6 +1,38 @@
 
 # Local dev settings (do not commit)
-petitpal/lib/dev_settings.dart
+**/dev_settings.dart
 
 # All zip files (do not commit)
 *.zip
+
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.flutter-plugins*
+.flutter-plugins-dependencies
+.melos_tool/
+**/build/
+
+# Android
+**/android/.gradle/
+**/android/local.properties
+**/android/**/build/
+**/.idea/
+*.iml
+*.apk
+*.aab
+*.aar
+*.jar
+*.keystore
+
+# iOS (if present)
+ios/Pods/
+ios/Runner.xcworkspace/
+**/*.xcuserstate
+**/*.xcworkspace
+**/*.xcuserdata
+
+# Generated
+pubspec.lock
+

@@ -15,10 +15,10 @@ class PetitPalApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MaterialApp(theme: AppTheme.dark(), 
       title: 'PetitPal',
       debugShowCheckedModeBanner: false,
-      theme: highContrastDarkTheme(),
+      
       routes: {
         '/': (_) => const HomeScreen(),
         '/settings': (_) => const SettingsScreen(),

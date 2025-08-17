@@ -1,73 +1,89 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart';
-import 'dart:ui' as ui;
 
-import '../config.dart';
-import '../utils/device_id.dart'; // assumes you have a DeviceId.get() util
+import '../utils/markdown.dart';
+import '../config/app_config.dart';
 
 class VoiceChatResult {
   final String? transcript;
   final String? reply;
-  final List<int>? audioBytes;
+  final Uint8List? audioBytes;
   final String? audioMime;
   VoiceChatResult({this.transcript, this.reply, this.audioBytes, this.audioMime});
 }
 
 class LlmService {
-  static String _localeTag() {
-    final l = ui.PlatformDispatcher.instance.locale;
-    final country = l.countryCode ?? '';
-    return country.isEmpty ? l.languageCode : '${l.languageCode}-${country}';
-  }
-
-  static Future<VoiceChatResult> voiceChat({
-    required Uint8List audio,
-    required String mimeType,
-    required String openAiApiKey,
-    String? voice,
-  }) async {
-    final deviceId = await DeviceId.get();
-    final url = Uri.parse('${AppConfig.normalizedWorkerBaseUrl}/api/voice_chat');
-    final resp = await http.post(
-      url,
-      headers: {
-        'Authorization': 'Bearer ' + openAiApiKey.trim(),
-        'Content-Type': mimeType,
-        'X-Device-ID': deviceId,
-        'X-App-Locale': _localeTag(),
-        'X-TTS-Voice': voice ?? 'alloy',
-      },
-      body: audio,
-    );
-    if (resp.statusCode != 200) {
-      throw Exception('voice_chat HTTP ${resp.statusCode}: ${resp.body}');
+  /// Verify key via the worker's /api/verify_key endpoint.
+  static Future<bool> verifyApiKey({required String openAiApiKey}) async {
+    final base = AppConfig.normalizedWorkerBaseUrl;
+    final uri = Uri.parse('$base/api/verify_key');
+    try {
+      final r = await http.get(uri, headers: {
+        'Authorization': 'Bearer $openAiApiKey',
+      });
+      return r.statusCode == 200;
+    } catch (_) {
+      return false;
     }
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    return VoiceChatResult(
-      transcript: data['transcript'] as String?,
-      reply: data['text'] as String?,
-      audioBytes: (data['audio_b64'] as String?) != null ? base64Decode(data['audio_b64'] as String) : null,
-      audioMime: data['audio_mime'] as String?,
-    );
   }
 
+  /// Voice sample via GET /api/tts_sample?voice=...&text=...
   static Future<Uint8List> ttsSample({
     required String openAiApiKey,
     required String voice,
-    String? text,
+    required String text,
   }) async {
-    final deviceId = await DeviceId.get();
-    final url = Uri.parse('${AppConfig.normalizedWorkerBaseUrl}/api/tts_sample?voice=${Uri.encodeComponent(voice)}&text=${Uri.encodeComponent(text ?? "This is a sample.")}');
-    final resp = await http.get(url, headers: {
-      'Authorization': 'Bearer ' + openAiApiKey.trim(),
-      'X-Device-ID': deviceId,
+    final base = AppConfig.normalizedWorkerBaseUrl;
+    final uri = Uri.parse('$base/api/tts_sample?voice=${Uri.encodeComponent(voice)}&text=${Uri.encodeComponent(text)}');
+    final r = await http.get(uri, headers: {
+      'Authorization': 'Bearer $openAiApiKey',
+      'Accept': 'audio/mpeg,application/json',
     });
-    if (resp.statusCode == 200) {
-      return resp.bodyBytes;
-    } else {
-      throw Exception('TTS sample error: HTTP ${resp.statusCode} - ${resp.body}');
+    if (r.statusCode != 200) {
+      throw Exception('TTS sample error: HTTP ${r.statusCode} - ${r.body}');
     }
+    return Uint8List.fromList(r.bodyBytes);
+  }
+
+  /// Send recorded audio bytes to /api/voice_chat (octet-stream).
+  static Future<VoiceChatResult> voiceChat({
+    required List<int> audio,
+    required String mimeType, // e.g. 'audio/aac' or 'audio/m4a'
+    required String openAiApiKey,
+    String? voice,
+    String? appLocale, // pass like 'en-US' when available
+  }) async {
+    final base = AppConfig.normalizedWorkerBaseUrl;
+    final uri = Uri.parse('$base/api/voice_chat');
+
+    final r = await http.post(uri,
+      headers: {
+        'Authorization': 'Bearer $openAiApiKey',
+        'Content-Type': mimeType,
+        if (voice != null) 'X-TTS-Voice': voice,
+        if (appLocale != null) 'X-App-Locale': appLocale,
+        'Accept': 'application/json',
+      },
+      body: Uint8List.fromList(audio),
+    );
+
+    if (r.statusCode != 200) {
+      throw Exception('Worker /api/voice_chat error: HTTP ${r.statusCode} - ${r.body}');
+    }
+
+    final data = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+
+    final reply = MarkdownUtils.clean((data['text'] as String?) ?? '');
+    final transcript = data['transcript'] as String?;
+
+    Uint8List? audioBytes;
+    final a = data['audio_b64'];
+    if (a is String) {
+      audioBytes = Uint8List.fromList(base64.decode(a));
+    }
+    final audioMime = data['audio_mime'] as String?;
+
+    return VoiceChatResult(transcript: transcript, reply: reply, audioBytes: audioBytes, audioMime: audioMime);
   }
 }

@@ -2,8 +2,8 @@
 class DevSettings {
   // Put your OpenAI key here during development to avoid retyping.
   // Example: static const String? openAiKey = "sk-...";
-  static const String? openAiKey = 'sk-';
+  static const String? openAiKey = null;
 
   // Disable haptic feedback (useful on emulators).
-  static const bool disableHaptics = true;
+  static const bool disableHaptics = false;
 }
