@@ -1,1 +1,6 @@
-'"$@"'
+name = "petitpal-api"
+main = "worker.js"
+compatibility_date = "2024-07-01"
+kv_namespaces = [
+  { binding = "petitpal-kv", id = "00000000000000000000000000000000" } # placeholder
+]

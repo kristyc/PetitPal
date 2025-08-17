@@ -1,3 +1,0 @@
-name = "petitpal-api"
-main = "worker.js"
-compatibility_date = "2024-07-01"
