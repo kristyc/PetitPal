@@ -6,7 +6,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
-import '../config.dart';
+import '../config/app_config.dart';
 import '../providers.dart';
 import '../services/llm_service.dart';
 
@@ -73,7 +73,7 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + key.trim(),
           },
-          body: '{"text":"diagnostic ping","model":"'+AppConfig.defaultModel+'"}',
+          body: '{"text":"diagnostic ping"}',
         );
         _add('HTTP POST /api/chat -> ' + r.statusCode.toString());
         _add('Body (first 300): ' + (r.body.length > 300 ? r.body.substring(0,300) : r.body));

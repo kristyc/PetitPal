@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:dynamic_background/dynamic_background.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -10,17 +11,22 @@ import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../providers.dart';
+import '../state/chat_phase.dart';
 import '../services/llm_service.dart';
 import '../utils/markdown.dart';
+
 import '../widgets/typing_dots.dart';
 import '../widgets/thinking_backdrop.dart';
-import '../state/chat_phase.dart';
+import '../widgets/mic_widget_bridge.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.autoStartFromWidget = false});
+  final bool autoStartFromWidget;
+
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
+
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _recorder = AudioRecorder();
@@ -29,17 +35,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _sttAvailable = false;
   String? _currentRecPath;
 
-  @override
-  void initState() {
-    super.initState();
-    _player.onPlayerStateChanged.listen((s) {
-      if (s == PlayerState.completed || s == PlayerState.stopped) {
-        if (ref.read(chatPhaseProvider) == ChatPhase.speaking) {
-          ref.read(chatPhaseProvider.notifier).state = ChatPhase.idle;
-        }
+@override
+void initState() {
+  super.initState();
+
+  // If launched from the homescreen widget, auto-start listening
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    if (!mounted) return;
+    if (widget.autoStartFromWidget) {
+      final phase = ref.read(chatPhaseProvider);
+      final listening = ref.read(listeningProvider);
+      if (phase == ChatPhase.idle && !listening) {
+        await _toggleRecord(); // uses your existing mic start/stop logic
       }
-    });
-  }
+    }
+  });
+
+  // Your existing player -> idle transition
+  _player.onPlayerStateChanged.listen((s) {
+    if (s == PlayerState.completed || s == PlayerState.stopped) {
+      if (ref.read(chatPhaseProvider) == ChatPhase.speaking) {
+        ref.read(chatPhaseProvider.notifier).state = ChatPhase.idle;
+      }
+    }
+  });
+}
+
 
   @override
   void dispose() {
@@ -164,6 +185,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final thinking = phase == ChatPhase.thinking || phase == ChatPhase.speaking;
     final hasAnswer = reply.isNotEmpty;
 
+	// Keep homescreen widget color in sync with app phase (must be in build)
+	ref.listen<ChatPhase>(chatPhaseProvider, (prev, next) {
+	  switch (next) {
+		case ChatPhase.listening:
+		  MicWidget.syncState(MicWidgetState.listening);
+		  break;
+		case ChatPhase.thinking:
+		case ChatPhase.speaking:
+		  MicWidget.syncState(MicWidgetState.thinking); // orange while Thinking/Speaking
+		  break;
+		default:
+		  MicWidget.syncState(MicWidgetState.idle);
+	  }
+	});
+
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('PetitPal'),
@@ -174,9 +211,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           )
         ],
       ),
-      body: Stack(
+      body: GestureDetector(
+  behavior: HitTestBehavior.opaque,
+  onHorizontalDragEnd: (_) {
+    try { ref.read(replyProvider.notifier).state = ''; } catch (_) {}
+  },
+  child: Stack(
         children: [
-          ThinkingBackdrop(active: thinking),
+          
+Positioned.fill(
+  child: thinking
+      ? DynamicBg(
+          duration: const Duration(seconds: 35),
+          painterData: LavaPainterData(
+            width: 240.0,
+            widthTolerance: 70.0,
+            growAndShrink: true,
+            growthRate: 10.0,
+            growthRateTolerance: 5.0,
+            blurLevel: 22.0,
+            numBlobs: 5,
+            backgroundColor: theme.colorScheme.background,
+			colors: const [
+			  Color(0xFFBF360C), // deep orange 900
+			  Color(0xFFE64A19), // deep orange 700
+			  Color(0xFFFF5722), // deep orange 500
+			],
+            allSameColor: false,
+            fadeBetweenColors: true,
+            changeColorsTogether: false,
+            speed: 20.0,
+            speedTolerance: 5.0,
+          ),
+          child: const SizedBox.shrink(),
+        )
+      : Container(color: theme.colorScheme.background),
+),
+
           if (hasAnswer)
             Align(
               alignment: Alignment.topCenter,
@@ -222,7 +293,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         ],
-      ),
+      )
+),
     );
   }
 

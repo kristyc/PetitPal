@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dev_settings.dart';
+import 'config/dev_settings.dart';
 
 final listeningProvider = StateProvider<bool>((ref) => false);
 final transcriptProvider = StateProvider<String>((ref) => '');

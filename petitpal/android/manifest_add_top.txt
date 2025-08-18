@@ -1,0 +1,5 @@
+<!-- Add inside <manifest> (top-level permissions) -->
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<!-- Optional but recommended for Android 13+ to show the ongoing notification -->
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

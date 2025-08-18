@@ -4,11 +4,17 @@ import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/diagnostics_screen.dart';
+import 'widgets/mic_widget_bridge.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Allow taps on the Android homescreen widget to reach Dart
+  await MicWidget.initBackground();
+
   runApp(const ProviderScope(child: PetitPalApp()));
 }
+
 
 class PetitPalApp extends StatelessWidget {
   const PetitPalApp({super.key});

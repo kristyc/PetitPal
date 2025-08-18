@@ -2,12 +2,31 @@
     package="com.petitpal.app">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" /> 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Recommended for Android 13+ so the ongoing notification appears -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="PetitPal"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+		<service
+			android:name=".MicForegroundService"
+			android:exported="false"
+			android:foregroundServiceType="microphone|mediaPlayback" />
+			<receiver
+				android:name=".MicWidgetProvider"
+				android:exported="true">
+				<intent-filter>
+					<action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+				</intent-filter>
+				<meta-data
+					android:name="android.appwidget.provider"
+					android:resource="@xml/mic_widget_info"/>
+			</receiver>
+
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

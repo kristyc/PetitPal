@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mic_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="8dp"
+	android:background="@android:color/transparent"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Circular background (we tint this dynamically to match theme.primary/secondary) -->
+    <ImageView
+        android:id="@+id/circle_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:src="@drawable/pp_circle_24"
+        android:scaleType="fitCenter"
+        android:contentDescription="PetitPal mic background" />
+
+    <!-- Foreground icon: mic / stop / close (tinted to onPrimary) -->
+    <ImageView
+        android:id="@+id/mic_button"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="center"
+        android:src="@drawable/ic_mic_24"
+        android:contentDescription="PetitPal mic" />
+</FrameLayout>

@@ -1,0 +1,5 @@
+<!-- Add inside <application> -->
+<service
+    android:name=".MicForegroundService"
+    android:exported="false"
+    android:foregroundServiceType="microphone|mediaPlayback" />

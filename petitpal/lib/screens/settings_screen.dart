@@ -8,7 +8,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers.dart';
+import '../config/app_config.dart';
 import '../services/llm_service.dart';
+import '../widgets/save_background_api_config.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -33,12 +35,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _restoreVerifiedFlag() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool('openai_key_verified') ?? false;
-    final keyAtSave = prefs.getString('openai_key_value') ?? '';
-    final current = ref.read(openAiKeyProvider) ?? '';
-    setState(() { _valid = saved && keyAtSave.isNotEmpty && keyAtSave == current; });
-  }
+	  final prefs = await SharedPreferences.getInstance();
+	  final saved = prefs.getBool('openai_key_verified') ?? false;
+	  final keyAtSave = prefs.getString('openai_key_value') ?? '';
+	  final current = ref.read(openAiKeyProvider) ?? '';
+	  setState(() {
+		_valid = saved && keyAtSave.isNotEmpty && keyAtSave == current;
+	  });
+	}
 
   @override
   void dispose() {
@@ -134,7 +138,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   final prefs = await SharedPreferences.getInstance();
                   if (ok) {
                     await prefs.setBool('openai_key_verified', true);
-                    await prefs.setString('openai_key_value', v);
+                    await prefs.setString('openai_key_value', v);					
+					// Save for homescreen widget Foreground Service (no hardcoded URLs)
+					await saveBackgroundApiConfig(
+					  openAiKey: v,
+					  workerBase: AppConfig.normalizedWorkerBaseUrl,
+					);
                   } else {
                     await prefs.setBool('openai_key_verified', false);
                     await prefs.remove('openai_key_value');
